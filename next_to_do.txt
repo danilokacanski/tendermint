@@ -1,0 +1,4 @@
+Persist validator state (locked block/round, evidence) across heights and act on evidence (e.g., mark validators jailed).
+Introduce voting power weights and adjust quorum math to 2/3 of total stake.
+Model per-peer gossip with randomized latency/ordering to stress the protocol.
+Validate proposals (allow invalid blocks to trigger nil prevotes) and include commit signatures to mirror real Tendermint messages.
