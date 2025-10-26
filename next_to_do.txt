@@ -1,4 +1,8 @@
-Persist validator state (locked block/round, evidence) across heights and act on evidence (e.g., mark validators jailed).
-Introduce voting power weights and adjust quorum math to 2/3 of total stake.
-Model per-peer gossip with randomized latency/ordering to stress the protocol.
-Validate proposals (allow invalid blocks to trigger nil prevotes) and include commit signatures to mirror real Tendermint messages.
+ABCI / Application Wiring: hook consensus to an application state machine, run DeliverTx/Commit, and validate proposals against app results (e.g., via block ID, app hash).
+Validator Identity & Signatures: give each validator its own keypair, sign votes and proposals, attach signatures to commits, and verify them on receipt.
+Evidence Handling: persist evidence, gossip it, and enforce penalties (jailed/tombstoned validators can’t propose or vote until slashed).
+State Persistence: store locked/valid blocks, round info, and validator sets on disk so restarts resume correctly.
+Networking: replace the in‑process simulator with a real P2P stack (handshakes, peer discovery, gossip, backpressure, misbehaving-peer handling).
+Timeout & Round Logic: match Tendermint’s precise exponential timeout schedule, round-change messages, and proposer selection rules.
+Block Structure & Validation: include transaction data, Merkle hashes, commit sig arrays; run proposer/client-side checks (e.g., vote extensions, commit counts).
+Configuration & Telemetry: expose config files/CLI for validator keys, addresses, timeouts; add structured logging and metrics.

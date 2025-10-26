@@ -1,11 +1,12 @@
-package main
+package consensus
 
 import (
 	"fmt"
-	"time"
+
+	"Tendermint/internal/types"
 )
 
-func (n *Node) handleMessage(msg Message) {
+func (n *Node) handleMessage(msg types.Message) {
 	if msg.Height < n.currentHeight {
 		return
 	}
@@ -25,15 +26,15 @@ func (n *Node) handleMessage(msg Message) {
 	}
 
 	switch msg.Type {
-	case Proposal:
+	case types.Proposal:
 		n.handleProposal(msg, false)
-	case Prevote:
+	case types.Prevote:
 		n.handlePrevote(msg)
-	case Precommit:
+	case types.Precommit:
 		n.handlePrecommit(msg)
-	case Commit:
+	case types.Commit:
 		n.handleCommit(msg)
-	case EvidenceMsg:
+	case types.EvidenceMsg:
 		n.handleEvidence(msg)
 	}
 }
@@ -49,7 +50,7 @@ func (n *Node) handleEvent(ev consensusEvent) {
 	}
 }
 
-func (n *Node) handleProposal(msg Message, local bool) {
+func (n *Node) handleProposal(msg types.Message, local bool) {
 	if n.committed || msg.Round != n.currentRound || msg.Height != n.currentHeight {
 		return
 	}
@@ -81,7 +82,7 @@ func (n *Node) onProposalTimeout(round int) {
 	if n.committed || round != n.currentRound || n.prevoteSent {
 		return
 	}
-	n.logf(Prevote.Color(), "Proposal timeout, prevoting nil")
+	n.logf(types.ColorPrevote, "Proposal timeout, prevoting nil")
 	n.sendPrevote(n.currentHeight, round, "", false, "timeout")
 }
 
@@ -90,7 +91,7 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 		return
 	}
 	if n.state != nil && n.state.Jailed {
-		n.logf(Prevote.Color(), "Jailed validator; not sending prevote (%s)", reason)
+		n.logf(types.ColorPrevote, "Jailed validator; not sending prevote (%s)", reason)
 		return
 	}
 
@@ -101,7 +102,7 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 	if n.behavior != nil {
 		if n.behavior.SilentPrevote {
 			n.prevoteSent = true
-			n.logf(Prevote.Color(), "Byzantine behaviour: skipping prevote (%s)", reason)
+			n.logf(types.ColorPrevote, "Byzantine behaviour: skipping prevote (%s)", reason)
 			n.scheduleStageTimeout(eventPrevoteTimeout, height, round)
 			return
 		}
@@ -114,9 +115,9 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 
 	n.prevoteSent = true
 
-	prevote := Message{
+	prevote := types.Message{
 		From:   n.ID,
-		Type:   Prevote,
+		Type:   types.Prevote,
 		Height: height,
 		Round:  round,
 		Block:  voteBlock,
@@ -129,9 +130,9 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 
 	if n.behavior != nil && n.behavior.EquivocatePrevote {
 		conflictBlock, conflictValid := n.conflictingVote(voteBlock, voteValid, height, round)
-		conflict := Message{
+		conflict := types.Message{
 			From:   n.ID,
-			Type:   Prevote,
+			Type:   types.Prevote,
 			Height: height,
 			Round:  round,
 			Block:  conflictBlock,
@@ -144,7 +145,7 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 	n.scheduleStageTimeout(eventPrevoteTimeout, height, round)
 }
 
-func (n *Node) handlePrevote(msg Message) {
+func (n *Node) handlePrevote(msg types.Message) {
 	if n.committed || msg.Round != n.currentRound || msg.Height != n.currentHeight {
 		return
 	}
@@ -158,7 +159,7 @@ func (n *Node) onPrevoteTimeout(round int) {
 	if n.committed || round != n.currentRound || n.precommitSent {
 		return
 	}
-	n.logf(Precommit.Color(), "Prevote timeout, precommitting nil")
+	n.logf(types.ColorPrecommit, "Prevote timeout, precommitting nil")
 	n.sendPrecommit(n.currentHeight, round, "", false, "timeout")
 }
 
@@ -167,7 +168,7 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 		return
 	}
 	if n.state != nil && n.state.Jailed {
-		n.logf(Precommit.Color(), "Jailed validator; not sending precommit (%s)", reason)
+		n.logf(types.ColorPrecommit, "Jailed validator; not sending precommit (%s)", reason)
 		return
 	}
 
@@ -178,7 +179,7 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 	if n.behavior != nil {
 		if n.behavior.SilentPrecommit {
 			n.precommitSent = true
-			n.logf(Precommit.Color(), "Byzantine behaviour: skipping precommit (%s)", reason)
+			n.logf(types.ColorPrecommit, "Byzantine behaviour: skipping precommit (%s)", reason)
 			n.scheduleStageTimeout(eventPrecommitTimeout, height, round)
 			return
 		}
@@ -191,9 +192,9 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 
 	n.precommitSent = true
 
-	precommit := Message{
+	precommit := types.Message{
 		From:   n.ID,
-		Type:   Precommit,
+		Type:   types.Precommit,
 		Height: height,
 		Round:  round,
 		Block:  voteBlock,
@@ -206,9 +207,9 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 
 	if n.behavior != nil && n.behavior.EquivocatePrecommit {
 		conflictBlock, conflictValid := n.conflictingVote(voteBlock, voteValid, height, round)
-		conflict := Message{
+		conflict := types.Message{
 			From:   n.ID,
-			Type:   Precommit,
+			Type:   types.Precommit,
 			Height: height,
 			Round:  round,
 			Block:  conflictBlock,
@@ -221,7 +222,7 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 	n.scheduleStageTimeout(eventPrecommitTimeout, height, round)
 }
 
-func (n *Node) handlePrecommit(msg Message) {
+func (n *Node) handlePrecommit(msg types.Message) {
 	if n.committed || msg.Round != n.currentRound || msg.Height != n.currentHeight {
 		return
 	}
@@ -235,11 +236,11 @@ func (n *Node) onPrecommitTimeout(round int) {
 	if n.committed || round != n.currentRound {
 		return
 	}
-	n.logf(Commit.Color(), "Precommit timeout, moving to next round")
+	n.logf(types.ColorCommit, "Precommit timeout, moving to next round")
 	n.roundActive = false
 }
 
-func (n *Node) handleCommit(msg Message) {
+func (n *Node) handleCommit(msg types.Message) {
 	if msg.Height != n.currentHeight {
 		if msg.Height > n.currentHeight {
 			n.pendingMessages = append(n.pendingMessages, msg)
@@ -258,7 +259,7 @@ func (n *Node) handleCommit(msg Message) {
 	}
 }
 
-func (n *Node) handleEvidence(msg Message) {
+func (n *Node) handleEvidence(msg types.Message) {
 	if msg.Evidence == nil {
 		return
 	}
@@ -270,12 +271,12 @@ func (n *Node) handleEvidence(msg Message) {
 	n.jailedPeers[ev.Offender] = true
 	if ev.Offender == n.ID && n.state != nil {
 		n.state.Jailed = true
-		n.logf(EvidenceMsg.Color(), "Node jailed due to evidence against itself")
+		n.logf(types.ColorEvidence, "Node jailed due to evidence against itself")
 	}
 	n.recomputeQuorum()
 }
 
-func (n *Node) recordPrevote(msg Message) bool {
+func (n *Node) recordPrevote(msg types.Message) bool {
 	if n.jailedPeers != nil && n.jailedPeers[msg.From] {
 		return false
 	}
@@ -288,7 +289,7 @@ func (n *Node) recordPrevote(msg Message) bool {
 
 	key := blockKey(msg.Block, msg.Valid)
 	if prev, ok := n.prevoteByVoter[msg.Round][msg.From]; ok && prev != key {
-		n.reportEvidence(msg.Height, msg.Round, Prevote, msg.From, prev, key)
+		n.reportEvidence(msg.Height, msg.Round, types.Prevote, msg.From, prev, key)
 		return false
 	}
 	n.prevoteByVoter[msg.Round][msg.From] = key
@@ -307,7 +308,7 @@ func (n *Node) recordPrevote(msg Message) bool {
 	return true
 }
 
-func (n *Node) recordPrecommit(msg Message) bool {
+func (n *Node) recordPrecommit(msg types.Message) bool {
 	if n.jailedPeers != nil && n.jailedPeers[msg.From] {
 		return false
 	}
@@ -320,7 +321,7 @@ func (n *Node) recordPrecommit(msg Message) bool {
 
 	key := blockKey(msg.Block, msg.Valid)
 	if prev, ok := n.precommitByVoter[msg.Round][msg.From]; ok && prev != key {
-		n.reportEvidence(msg.Height, msg.Round, Precommit, msg.From, prev, key)
+		n.reportEvidence(msg.Height, msg.Round, types.Precommit, msg.From, prev, key)
 		return false
 	}
 	n.precommitByVoter[msg.Round][msg.From] = key
@@ -397,11 +398,11 @@ func (n *Node) checkPrecommitQuorum(height, round int, block string, valid bool)
 	n.committed = true
 	n.roundActive = false
 	n.committedBlock = block
-	n.logf(Commit.Color(), "Committed block: %s ✅", block)
+	n.logf(types.ColorCommit, "Committed block: %s ✅", block)
 
-	commit := Message{
+	commit := types.Message{
 		From:   n.ID,
-		Type:   Commit,
+		Type:   types.Commit,
 		Height: height,
 		Round:  round,
 		Block:  block,
@@ -410,21 +411,21 @@ func (n *Node) checkPrecommitQuorum(height, round int, block string, valid bool)
 	n.broadcast(commit)
 }
 
-func (n *Node) reportEvidence(height, round int, stage MessageType, offender int, votes ...string) {
-	evidence := &Evidence{
+func (n *Node) reportEvidence(height, round int, stage types.MessageType, offender int, votes ...string) {
+	evidence := &types.Evidence{
 		Height:           height,
 		Round:            round,
 		Stage:            stage,
 		Offender:         offender,
 		ConflictingVotes: votes,
 	}
-	n.logf(EvidenceMsg.Color(), "Detected double-sign evidence: offender=%d stage=%s votes=%v", offender, stage.Label(), votes)
+	n.logf(types.ColorEvidence, "Detected double-sign evidence: offender=%d stage=%s votes=%v", offender, stage.Label(), votes)
 	if n.state != nil {
 		n.state.EvidenceLog = append(n.state.EvidenceLog, evidence)
 	}
-	msg := Message{
+	msg := types.Message{
 		From:     n.ID,
-		Type:     EvidenceMsg,
+		Type:     types.EvidenceMsg,
 		Height:   height,
 		Round:    round,
 		Evidence: evidence,
@@ -433,7 +434,7 @@ func (n *Node) reportEvidence(height, round int, stage MessageType, offender int
 	n.jailedPeers[offender] = true
 	if offender == n.ID && n.state != nil {
 		n.state.Jailed = true
-		n.logf(EvidenceMsg.Color(), "Node jailed due to self-detected evidence")
+		n.logf(types.ColorEvidence, "Node jailed due to self-detected evidence")
 	}
 	n.recomputeQuorum()
 }
@@ -456,25 +457,6 @@ func (n *Node) selectProposalBlock(height, round int) string {
 		return n.state.ValidBlock
 	}
 	return fmt.Sprintf("Block_%d_%d", height, round)
-}
-
-func (n *Node) scheduleEvent(after time.Duration, kind eventType, height, round int) {
-	go func() {
-		time.Sleep(after)
-		n.internal <- consensusEvent{height: height, round: round, kind: kind}
-	}()
-}
-
-func (n *Node) logf(color string, format string, args ...interface{}) {
-	prefix := fmt.Sprintf("[H%d R%d][Node %d] ", n.currentHeight, n.currentRound, n.ID)
-	fmt.Printf("%s%s%s%s\n", color, prefix, fmt.Sprintf(format, args...), colorReset)
-}
-
-func (n *Node) conflictingVote(block string, valid bool, height, round int) (string, bool) {
-	if block == "" || !valid {
-		return fmt.Sprintf("Equiv_%d_%d_from_%d", height, round, n.ID), true
-	}
-	return "", false
 }
 
 func (n *Node) recomputeQuorum() {
@@ -520,4 +502,18 @@ func (n *Node) voterPower(id int) int {
 		}
 	}
 	return 1
+}
+
+func blockKey(block string, valid bool) string {
+	if !valid || block == "" {
+		return "nil"
+	}
+	return block
+}
+
+func formatBlockForLog(block string, valid bool) string {
+	if !valid || block == "" {
+		return "nil"
+	}
+	return block
 }

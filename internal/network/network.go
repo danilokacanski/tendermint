@@ -1,34 +1,36 @@
-package main
+package network
 
 import (
 	"fmt"
 	mathrand "math/rand"
 	"sync"
 	"time"
+
+	"Tendermint/internal/types"
 )
 
+type DelayFunc func(from, to int, msg types.Message) time.Duration
+type LogFunc func(from, to int, msg types.Message, deliveredAt time.Time)
+
 type Network interface {
-	Register(node *Node)
-	Broadcast(from int, msg Message)
-	Unicast(from int, to int, msg Message)
+	Register(id int, inbox chan<- types.Message)
+	Broadcast(from int, msg types.Message)
+	Unicast(from int, to int, msg types.Message)
 	Stop()
 }
-
-type DelayFunc func(from, to int, msg Message) time.Duration
-type LogFunc func(from, to int, msg Message, deliveredAt time.Time)
 
 type NetworkOption func(*SimulatedNetwork)
 
 type networkEnvelope struct {
 	from  int
 	to    int
-	msg   Message
+	msg   types.Message
 	delay time.Duration
 }
 
 type SimulatedNetwork struct {
 	mu       sync.RWMutex
-	nodes    map[int]*Node
+	inboxes  map[int]chan<- types.Message
 	messages chan networkEnvelope
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -48,7 +50,7 @@ func NewSimulatedNetwork(workerCount int, opts ...NetworkOption) *SimulatedNetwo
 		workerCount = 4
 	}
 	net := &SimulatedNetwork{
-		nodes:    make(map[int]*Node),
+		inboxes:  make(map[int]chan<- types.Message),
 		messages: make(chan networkEnvelope, 1024),
 		stopCh:   make(chan struct{}),
 		rng:      mathrand.New(mathrand.NewSource(time.Now().UnixNano())),
@@ -95,18 +97,13 @@ func WithGossipJitter(max time.Duration) NetworkOption {
 	}
 }
 
-func (n *SimulatedNetwork) Register(node *Node) {
+func (n *SimulatedNetwork) Register(id int, inbox chan<- types.Message) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-
-	if node.In == nil {
-		node.In = make(chan Message, 32)
-	}
-	node.net = n
-	n.nodes[node.ID] = node
+	n.inboxes[id] = inbox
 }
 
-func (n *SimulatedNetwork) Broadcast(from int, msg Message) {
+func (n *SimulatedNetwork) Broadcast(from int, msg types.Message) {
 	receivers := n.activeNodesExcept(from)
 	if len(receivers) == 0 {
 		return
@@ -122,7 +119,7 @@ func (n *SimulatedNetwork) Broadcast(from int, msg Message) {
 	}
 }
 
-func (n *SimulatedNetwork) Unicast(from int, to int, msg Message) {
+func (n *SimulatedNetwork) Unicast(from int, to int, msg types.Message) {
 	if !n.nodeExists(to) {
 		return
 	}
@@ -145,11 +142,11 @@ func (n *SimulatedNetwork) activeNodesExcept(skip int) []int {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	if len(n.nodes) == 0 {
+	if len(n.inboxes) == 0 {
 		return nil
 	}
-	receivers := make([]int, 0, len(n.nodes)-1)
-	for id := range n.nodes {
+	receivers := make([]int, 0, len(n.inboxes)-1)
+	for id := range n.inboxes {
 		if id == skip {
 			continue
 		}
@@ -161,7 +158,7 @@ func (n *SimulatedNetwork) activeNodesExcept(skip int) []int {
 func (n *SimulatedNetwork) nodeExists(id int) bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	_, ok := n.nodes[id]
+	_, ok := n.inboxes[id]
 	return ok
 }
 
@@ -227,10 +224,10 @@ func (n *SimulatedNetwork) deliver(env networkEnvelope) {
 	}
 
 	n.mu.RLock()
-	node := n.nodes[env.to]
+	inbox := n.inboxes[env.to]
 	n.mu.RUnlock()
 
-	if node == nil {
+	if inbox == nil {
 		return
 	}
 
@@ -239,18 +236,15 @@ func (n *SimulatedNetwork) deliver(env networkEnvelope) {
 	}
 
 	select {
-	case node.In <- env.msg:
+	case inbox <- env.msg:
 	case <-n.stopCh:
 	}
 }
 
-func DefaultNetworkLogger(from, to int, msg Message, deliveredAt time.Time) {
-	height := msg.Height
-	round := msg.Round
-	fmt.Printf(
-		"[NET][H%d R%d][%s] %d → %d @ %s\n",
-		height,
-		round,
+func DefaultNetworkLogger(from, to int, msg types.Message, deliveredAt time.Time) {
+	fmt.Printf("[NET][H%d R%d][%s] %d → %d @ %s\n",
+		msg.Height,
+		msg.Round,
 		msg.Type.Label(),
 		from,
 		to,

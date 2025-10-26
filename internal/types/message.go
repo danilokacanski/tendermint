@@ -1,4 +1,4 @@
-package main
+package types
 
 type MessageType int
 
@@ -11,12 +11,12 @@ const (
 )
 
 const (
-	colorReset     = "\033[0m"
-	colorProposal  = "\033[36m" // cyan
-	colorPrevote   = "\033[33m" // yellow
-	colorPrecommit = "\033[35m" // magenta
-	colorCommit    = "\033[32m" // green
-	colorEvidence  = "\033[31m" // red
+	ColorReset     = "\033[0m"
+	ColorProposal  = "\033[36m"
+	ColorPrevote   = "\033[33m"
+	ColorPrecommit = "\033[35m"
+	ColorCommit    = "\033[32m"
+	ColorEvidence  = "\033[31m"
 )
 
 type Message struct {
@@ -40,17 +40,17 @@ type Evidence struct {
 func (mt MessageType) Color() string {
 	switch mt {
 	case Proposal:
-		return colorProposal
+		return ColorProposal
 	case Prevote:
-		return colorPrevote
+		return ColorPrevote
 	case Precommit:
-		return colorPrecommit
+		return ColorPrecommit
 	case Commit:
-		return colorCommit
+		return ColorCommit
 	case EvidenceMsg:
-		return colorEvidence
+		return ColorEvidence
 	default:
-		return colorReset
+		return ColorReset
 	}
 }
 

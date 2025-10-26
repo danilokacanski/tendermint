@@ -1,6 +1,12 @@
-package main
+package consensus
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"Tendermint/internal/network"
+	"Tendermint/internal/types"
+)
 
 type voteSet map[int]bool
 
@@ -34,14 +40,14 @@ type ValidatorState struct {
 	ValidBlock   string
 	ValidRound   int
 	ValidHeight  int
-	EvidenceLog  []*Evidence
+	EvidenceLog  []*types.Evidence
 	Jailed       bool
 }
 
 type Node struct {
 	ID  int
-	In  chan Message
-	net Network
+	In  chan types.Message
+	net network.Network
 
 	total int
 
@@ -59,7 +65,7 @@ type Node struct {
 	precommitByVoter map[int]map[int]string
 	prevotePower     map[int]map[string]int
 	precommitPower   map[int]map[string]int
-	pendingMessages  []Message
+	pendingMessages  []types.Message
 	committed        bool
 	committedBlock   string
 
@@ -90,14 +96,103 @@ type Node struct {
 	aborted              bool
 }
 
-func (n *Node) broadcast(msg Message) {
+func NewNode(id int, power int, powerMap map[int]int) *Node {
+	if powerMap == nil {
+		powerMap = make(map[int]int)
+	}
+	if _, ok := powerMap[id]; !ok {
+		powerMap[id] = power
+	}
+	return &Node{
+		ID:               id,
+		In:               make(chan types.Message, 64),
+		state:            &ValidatorState{},
+		jailedPeers:      make(map[int]bool),
+		power:            power,
+		powerMap:         powerMap,
+		proposalTimeout:  200 * time.Millisecond,
+		prevoteTimeout:   200 * time.Millisecond,
+		precommitTimeout: 200 * time.Millisecond,
+		maxTimeout:       10 * time.Second,
+	}
+}
+
+func (n *Node) SetBehavior(b *ByzantineBehavior) {
+	n.behavior = b
+}
+
+func (n *Node) SetTimeouts(proposal, prevote, precommit time.Duration) {
+	if proposal > 0 {
+		n.proposalTimeout = proposal
+		n.baseProposalTimeout = proposal
+	}
+	if prevote > 0 {
+		n.prevoteTimeout = prevote
+		n.basePrevoteTimeout = prevote
+	}
+	if precommit > 0 {
+		n.precommitTimeout = precommit
+		n.basePrecommitTimeout = precommit
+	}
+}
+
+func (n *Node) SetMaxTimeout(d time.Duration) {
+	if d > 0 {
+		n.maxTimeout = d
+	}
+}
+
+func (n *Node) SetNetwork(net network.Network) {
+	n.net = net
+	if n.In == nil {
+		n.In = make(chan types.Message, 64)
+	}
+	net.Register(n.ID, n.In)
+}
+
+func (n *Node) SetPowerMap(powerMap map[int]int) {
+	n.powerMap = powerMap
+}
+
+func (n *Node) RecomputeQuorum() {
+	n.recomputeQuorum()
+}
+
+func (n *Node) QuorumPower() int {
+	return n.quorumPower
+}
+
+func (n *Node) JailPeer(id int) {
+	if n.jailedPeers == nil {
+		n.jailedPeers = make(map[int]bool)
+	}
+	n.jailedPeers[id] = true
+}
+
+func (n *Node) Committed() bool {
+	return n.committed
+}
+
+func (n *Node) CommittedBlock() string {
+	return n.committedBlock
+}
+
+func (n *Node) Aborted() bool {
+	return n.aborted
+}
+
+func (n *Node) Identifier() int {
+	return n.ID
+}
+
+func (n *Node) broadcast(msg types.Message) {
 	if n.net == nil {
 		return
 	}
 	n.net.Broadcast(n.ID, msg)
 }
 
-func (n *Node) unicast(to int, msg Message) {
+func (n *Node) unicast(to int, msg types.Message) {
 	if n.net == nil {
 		return
 	}
@@ -192,5 +287,24 @@ func (n *Node) abortConsensus(height, round int, timeout time.Duration) {
 	}
 	n.aborted = true
 	n.roundActive = false
-	n.logf(EvidenceMsg.Color(), "Aborting height %d at round %d: timeout %s exceeds limit %s", height, round, timeout, n.maxTimeout)
+	n.logf(types.ColorEvidence, "Aborting height %d at round %d: timeout %s exceeds limit %s", height, round, timeout, n.maxTimeout)
+}
+
+func (n *Node) scheduleEvent(after time.Duration, kind eventType, height, round int) {
+	go func() {
+		time.Sleep(after)
+		n.internal <- consensusEvent{height: height, round: round, kind: kind}
+	}()
+}
+
+func (n *Node) logf(color string, format string, args ...interface{}) {
+	prefix := fmt.Sprintf("[H%d R%d][Node %d] ", n.currentHeight, n.currentRound, n.ID)
+	fmt.Printf("%s%s%s%s\n", color, prefix, fmt.Sprintf(format, args...), types.ColorReset)
+}
+
+func (n *Node) conflictingVote(block string, valid bool, height, round int) (string, bool) {
+	if block == "" || !valid {
+		return fmt.Sprintf("Equiv_%d_%d_from_%d", height, round, n.ID), true
+	}
+	return "", false
 }

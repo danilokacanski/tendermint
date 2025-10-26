@@ -1,4 +1,6 @@
-package main
+package consensus
+
+import "Tendermint/internal/types"
 
 func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 	if n.state == nil {
@@ -24,7 +26,7 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 	defer func() { n.active = false }()
 
 	if n.state.Jailed {
-		n.logf(EvidenceMsg.Color(), "Validator jailed; skipping height %d", height)
+		n.logf(types.ColorEvidence, "Validator jailed; skipping height %d", height)
 		return true
 	}
 
@@ -56,7 +58,7 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 
 	round := startRound
 	roundsTried := 0
-	nextEscalation := 0
+	nextEscalation := 1
 	for !n.committed && !n.aborted {
 		n.runRound(height, round)
 		roundsTried++
@@ -66,8 +68,8 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 		round++
 		if roundsTried >= nextEscalation && !n.aborted {
 			newCap := n.escalateTimeoutCap()
-			n.logf(Prevote.Color(), "Escalating timeouts after %d rounds without quorum (cap=%dx)", roundsTried, newCap)
-			nextEscalation = roundsTried * 2
+			n.logf(types.ColorPrevote, "Escalating timeouts after %d rounds without quorum (cap=%dx)", roundsTried, newCap)
+			nextEscalation *= 2
 		}
 	}
 
@@ -105,15 +107,15 @@ func (n *Node) runRound(height int, round int) {
 
 	if n.ID == n.proposerFor(height, round) {
 		blockID := n.selectProposalBlock(height, round)
-		proposal := Message{
+		proposal := types.Message{
 			From:   n.ID,
-			Type:   Proposal,
+			Type:   types.Proposal,
 			Height: height,
 			Round:  round,
 			Block:  blockID,
 			Valid:  blockID != "",
 		}
-		n.logf(Proposal.Color(), "Proposed block: %s", formatBlockForLog(proposal.Block, proposal.Valid))
+		n.logf(proposal.Type.Color(), "Proposed block: %s", formatBlockForLog(proposal.Block, proposal.Valid))
 		n.broadcast(proposal)
 		n.handleProposal(proposal, true)
 	}
