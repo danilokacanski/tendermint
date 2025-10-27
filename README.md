@@ -43,7 +43,12 @@ From the repository root, execute:
 go run ./cmd/tendermint-sim
 ```
 
-This boots the built-in scenario (five validators with configurable Byzantine behaviour) and prints the consensus log for a few heights.
+By default this boots a baseline scenario and a short grid of hyperparameters. For each configuration the simulator prints the consensus log to stdout **and** writes CSV reports to:
+
+- `summary/current/<timestamp>_<label>.csv` – per-height consensus metrics
+- `summary/timeouts/<timestamp>_<label>.csv` – timeout counters for the same run
+
+Each CSV is accompanied by a `.txt` file with the exact hyperparameters so you can trace results when running large sweeps.
 
 ## Running Tests
 
@@ -63,6 +68,7 @@ The tests spin up validators with deterministic network settings and verify core
 
 ## Customising
 
-- Adjust validator powers and Byzantine behaviours in `cmd/tendermint-sim/main.go`.
-- Tune network latency, jitter, logging, peer topology, and signature validation options using helpers in `internal/network`.
+- Single runs are configured through `SimulationConfig` in `cmd/tendermint-sim/main.go`.
+- To sweep multiple options, populate a `SimulationGrid` and call `RunSimulationGrid`. Each dimension you populate becomes part of the Cartesian product and produces its own CSV + metadata files.
+- Adjust network latency, jitter, logging, peer topology, and signature validation options using helpers in `internal/network`.
 - Extend the test scenarios under `test/` to cover new edge cases or protocol changes.
