@@ -42,6 +42,30 @@ type SimulationConfig struct {
 	LogNetwork       bool
 }
 
+type SimulationGrid struct {
+	Labels            []string
+	PowerSets         [][]int
+	Heights           []int
+	Seeds             []int64
+	DelayMinMs        []int
+	DelayMaxMs        []int
+	GossipJitters     []time.Duration
+	ProposalTimeouts  []time.Duration
+	PrevoteTimeouts   []time.Duration
+	PrecommitTimeouts []time.Duration
+	MaxTimeouts       []time.Duration
+	Topologies        []string
+	NetworkWorkers    []int
+	LogNetworkOptions []bool
+	ByzantineVariants []map[int]*ByzantineConfig
+}
+
+type RunArtifact struct {
+	Config           SimulationConfig
+	ConsensusSummary string
+	TimeoutSummary   string
+}
+
 func RunSimulation(cfg SimulationConfig) (string, string, error) {
 	if len(cfg.Powers) == 0 {
 		return "", "", fmt.Errorf("simulation requires at least one validator power entry")
@@ -154,6 +178,277 @@ func RunSimulation(cfg SimulationConfig) (string, string, error) {
 	}
 
 	return consensusPath, timeoutPath, nil
+}
+
+func RunSimulationGrid(base SimulationConfig, grid SimulationGrid) ([]RunArtifact, error) {
+	choices := buildGridChoices(grid)
+	if len(choices) == 0 {
+		cfgCopy := base
+		if cfgCopy.Label == "" {
+			cfgCopy.Label = "run"
+		}
+		cons, timeouts, err := RunSimulation(cfgCopy)
+		if err != nil {
+			return nil, err
+		}
+		return []RunArtifact{{Config: cfgCopy, ConsensusSummary: cons, TimeoutSummary: timeouts}}, nil
+	}
+	var results []RunArtifact
+	var dfs func(idx int, cfg SimulationConfig, labelParts []string) error
+	dfs = func(idx int, cfg SimulationConfig, labelParts []string) error {
+		if idx == len(choices) {
+			cfgCopy := cfg
+			cfgCopy.Label = combineLabel(base.Label, labelParts)
+			cons, timeouts, err := RunSimulation(cfgCopy)
+			if err != nil {
+				return err
+			}
+			results = append(results, RunArtifact{Config: cfgCopy, ConsensusSummary: cons, TimeoutSummary: timeouts})
+			return nil
+		}
+		for _, option := range choices[idx] {
+			cfgNext := cfg
+			option.apply(&cfgNext)
+			nextParts := labelParts
+			if option.label != "" {
+				nextParts = append(append([]string(nil), labelParts...), option.label)
+			}
+			if err := dfs(idx+1, cfgNext, nextParts); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := dfs(0, base, nil); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+type gridChoice struct {
+	label string
+	apply func(*SimulationConfig)
+}
+
+func buildGridChoices(grid SimulationGrid) [][]gridChoice {
+	var fields [][]gridChoice
+	if len(grid.Labels) > 0 {
+		choices := make([]gridChoice, len(grid.Labels))
+		for i, lbl := range grid.Labels {
+			label := sanitizeLabel(lbl)
+			choices[i] = gridChoice{
+				label: label,
+				apply: func(cfg *SimulationConfig) {
+					cfg.Label = lbl
+				},
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.PowerSets) > 0 {
+		choices := make([]gridChoice, len(grid.PowerSets))
+		for i, powers := range grid.PowerSets {
+			powersCopy := append([]int(nil), powers...)
+			pc := powersCopy
+			label := fmt.Sprintf("powers=%s", formatIntSlice(pc))
+			choices[i] = gridChoice{
+				label: label,
+				apply: func(cfg *SimulationConfig) {
+					cfg.Powers = append([]int(nil), pc...)
+				},
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.Heights) > 0 {
+		choices := make([]gridChoice, len(grid.Heights))
+		for i, h := range grid.Heights {
+			hVal := h
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("heights=%d", hVal),
+				apply: func(cfg *SimulationConfig) { cfg.Heights = hVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.Seeds) > 0 {
+		choices := make([]gridChoice, len(grid.Seeds))
+		for i, s := range grid.Seeds {
+			sVal := s
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("seed=%d", sVal),
+				apply: func(cfg *SimulationConfig) { cfg.Seed = sVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.DelayMinMs) > 0 {
+		choices := make([]gridChoice, len(grid.DelayMinMs))
+		for i, d := range grid.DelayMinMs {
+			dVal := d
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("delaymin=%d", dVal),
+				apply: func(cfg *SimulationConfig) { cfg.DelayMinMs = dVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.DelayMaxMs) > 0 {
+		choices := make([]gridChoice, len(grid.DelayMaxMs))
+		for i, d := range grid.DelayMaxMs {
+			dVal := d
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("delaymax=%d", dVal),
+				apply: func(cfg *SimulationConfig) { cfg.DelayMaxMs = dVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.GossipJitters) > 0 {
+		choices := make([]gridChoice, len(grid.GossipJitters))
+		for i, j := range grid.GossipJitters {
+			jVal := j
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("jitter=%dms", jVal.Milliseconds()),
+				apply: func(cfg *SimulationConfig) { cfg.GossipJitter = jVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.ProposalTimeouts) > 0 {
+		choices := make([]gridChoice, len(grid.ProposalTimeouts))
+		for i, t := range grid.ProposalTimeouts {
+			tVal := t
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("proposal=%dms", tVal.Milliseconds()),
+				apply: func(cfg *SimulationConfig) { cfg.ProposalTimeout = tVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.PrevoteTimeouts) > 0 {
+		choices := make([]gridChoice, len(grid.PrevoteTimeouts))
+		for i, t := range grid.PrevoteTimeouts {
+			tVal := t
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("prevote=%dms", tVal.Milliseconds()),
+				apply: func(cfg *SimulationConfig) { cfg.PrevoteTimeout = tVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.PrecommitTimeouts) > 0 {
+		choices := make([]gridChoice, len(grid.PrecommitTimeouts))
+		for i, t := range grid.PrecommitTimeouts {
+			tVal := t
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("precommit=%dms", tVal.Milliseconds()),
+				apply: func(cfg *SimulationConfig) { cfg.PrecommitTimeout = tVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.MaxTimeouts) > 0 {
+		choices := make([]gridChoice, len(grid.MaxTimeouts))
+		for i, t := range grid.MaxTimeouts {
+			tVal := t
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("maxtimeout=%dms", tVal.Milliseconds()),
+				apply: func(cfg *SimulationConfig) { cfg.MaxTimeout = tVal },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.Topologies) > 0 {
+		choices := make([]gridChoice, len(grid.Topologies))
+		for i, topo := range grid.Topologies {
+			topology := topo
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("topo=%s", sanitizeLabel(topology)),
+				apply: func(cfg *SimulationConfig) { cfg.Topology = topology },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.NetworkWorkers) > 0 {
+		choices := make([]gridChoice, len(grid.NetworkWorkers))
+		for i, workers := range grid.NetworkWorkers {
+			w := workers
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("workers=%d", w),
+				apply: func(cfg *SimulationConfig) { cfg.NetworkWorkers = w },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.LogNetworkOptions) > 0 {
+		choices := make([]gridChoice, len(grid.LogNetworkOptions))
+		for i, option := range grid.LogNetworkOptions {
+			op := option
+			choices[i] = gridChoice{
+				label: fmt.Sprintf("lognet=%t", op),
+				apply: func(cfg *SimulationConfig) { cfg.LogNetwork = op },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	if len(grid.ByzantineVariants) > 0 {
+		choices := make([]gridChoice, len(grid.ByzantineVariants))
+		for i, variant := range grid.ByzantineVariants {
+			variantCopy := cloneByzantineMap(variant)
+			label := fmt.Sprintf("byz=%d", len(variantCopy))
+			choices[i] = gridChoice{
+				label: label,
+				apply: func(cfg *SimulationConfig) { cfg.Byzantine = cloneByzantineMap(variantCopy) },
+			}
+		}
+		fields = append(fields, choices)
+	}
+	return fields
+}
+
+func combineLabel(base string, parts []string) string {
+	var segments []string
+	if base != "" {
+		segments = append(segments, sanitizeLabel(base))
+	}
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		segments = append(segments, sanitizeLabel(part))
+	}
+	if len(segments) == 0 {
+		return "run"
+	}
+	return strings.Join(segments, "_")
+}
+
+func formatIntSlice(values []int) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = fmt.Sprintf("%d", v)
+	}
+	return strings.Join(parts, "-")
+}
+
+func cloneByzantineMap(src map[int]*ByzantineConfig) map[int]*ByzantineConfig {
+	if src == nil {
+		return nil
+	}
+	clone := make(map[int]*ByzantineConfig, len(src))
+	for id, cfg := range src {
+		if cfg == nil {
+			clone[id] = nil
+			continue
+		}
+		copyCfg := *cfg
+		clone[id] = &copyCfg
+	}
+	return clone
 }
 
 func buildPeers(topology string, total int) map[int][]int {

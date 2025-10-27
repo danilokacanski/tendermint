@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	cfg := SimulationConfig{
+	base := SimulationConfig{
 		Label:            "baseline",
 		Powers:           []int{3, 2, 2, 1, 1, 1, 2, 4, 6, 8},
 		Heights:          3,
@@ -26,11 +26,26 @@ func main() {
 		},
 	}
 
-	summaryPath, timeoutPath, err := RunSimulation(cfg)
+	grid := SimulationGrid{
+		Heights:          []int{3},
+		GossipJitters:    []time.Duration{25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond},
+		ProposalTimeouts: []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, 750 * time.Millisecond},
+		Topologies:       []string{"ring", "full"},
+	}
+
+	results, err := RunSimulationGrid(base, grid)
 	if err != nil {
-		fmt.Printf("simulation failed: %v\n", err)
+		fmt.Printf("simulation grid failed: %v\n", err)
 		return
 	}
-	fmt.Printf("Consensus summary written to %s\n", summaryPath)
-	fmt.Printf("Timeout summary written to %s\n", timeoutPath)
+
+	if len(results) == 0 {
+		fmt.Println("no simulations executed")
+		return
+	}
+
+	for _, res := range results {
+		fmt.Printf("[%s] consensus summary: %s\n", res.Config.Label, res.ConsensusSummary)
+		fmt.Printf("[%s] timeout summary:   %s\n", res.Config.Label, res.TimeoutSummary)
+	}
 }
