@@ -83,6 +83,9 @@ func (n *Node) onProposalTimeout(round int) {
 	if n.committed || round != n.currentRound || n.prevoteSent {
 		return
 	}
+	if n.activeMetrics != nil {
+		n.activeMetrics.ProposalTimeouts++
+	}
 	n.logf(types.ColorPrevote, "Proposal timeout, prevoting nil")
 	n.sendPrevote(n.currentHeight, round, "", false, "timeout")
 }
@@ -162,6 +165,9 @@ func (n *Node) onPrevoteTimeout(round int) {
 	if n.committed || round != n.currentRound || n.precommitSent {
 		return
 	}
+	if n.activeMetrics != nil {
+		n.activeMetrics.PrevoteTimeouts++
+	}
 	n.logf(types.ColorPrecommit, "Prevote timeout, precommitting nil")
 	n.sendPrecommit(n.currentHeight, round, "", false, "timeout")
 }
@@ -240,6 +246,9 @@ func (n *Node) handlePrecommit(msg types.Message) {
 func (n *Node) onPrecommitTimeout(round int) {
 	if n.committed || round != n.currentRound {
 		return
+	}
+	if n.activeMetrics != nil {
+		n.activeMetrics.PrecommitTimeouts++
 	}
 	n.logf(types.ColorCommit, "Precommit timeout, moving to next round")
 	n.roundActive = false

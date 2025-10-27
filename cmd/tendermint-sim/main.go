@@ -80,6 +80,11 @@ func main() {
 		} else {
 			fmt.Printf("Consensus summary written to %s\n", path)
 		}
+		if timeoutPath, err := writeTimeoutSummaryCSV(summaries); err != nil {
+			fmt.Printf("failed to write timeout summary: %v\n", err)
+		} else {
+			fmt.Printf("Timeout summary written to %s\n", timeoutPath)
+		}
 	}
 
 	time.Sleep(500 * time.Millisecond)
@@ -102,7 +107,7 @@ func buildRingPeers(total int) map[int][]int {
 }
 
 func writeConsensusSummaryCSV(summaries []*consensus.HeightSummary) (string, error) {
-	dir := filepath.Join("summary")
+	dir := filepath.Join("summary", "current")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating summary directory: %w", err)
 	}
@@ -157,6 +162,56 @@ func writeConsensusSummaryCSV(summaries []*consensus.HeightSummary) (string, err
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		return "", fmt.Errorf("flushing csv writer: %w", err)
+	}
+
+	return path, nil
+}
+
+func writeTimeoutSummaryCSV(summaries []*consensus.HeightSummary) (string, error) {
+	dir := filepath.Join("summary", "timeouts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("creating timeout summary directory: %w", err)
+	}
+
+	filename := time.Now().Format("20060102_150405") + ".csv"
+	path := filepath.Join(dir, filename)
+	file, err := os.Create(path)
+	if err != nil {
+		return "", fmt.Errorf("creating timeout summary file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	header := []string{
+		"height",
+		"proposal_timeouts",
+		"prevote_timeouts",
+		"precommit_timeouts",
+		"total_timeouts",
+	}
+	if err := writer.Write(header); err != nil {
+		return "", fmt.Errorf("writing timeout header: %w", err)
+	}
+
+	for _, s := range summaries {
+		total := s.ProposalTimeouts + s.PrevoteTimeouts + s.PrecommitTimeouts
+		record := []string{
+			fmt.Sprintf("%d", s.Height),
+			fmt.Sprintf("%d", s.ProposalTimeouts),
+			fmt.Sprintf("%d", s.PrevoteTimeouts),
+			fmt.Sprintf("%d", s.PrecommitTimeouts),
+			fmt.Sprintf("%d", total),
+		}
+		if err := writer.Write(record); err != nil {
+			return "", fmt.Errorf("writing timeout record for height %d: %w", s.Height, err)
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", fmt.Errorf("flushing timeout csv writer: %w", err)
 	}
 
 	return path, nil
