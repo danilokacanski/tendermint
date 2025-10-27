@@ -108,13 +108,15 @@ func (n *Node) runRound(height int, round int) {
 	if n.ID == n.proposerFor(height, round) {
 		blockID := n.selectProposalBlock(height, round)
 		proposal := types.Message{
-			From:   n.ID,
-			Type:   types.Proposal,
-			Height: height,
-			Round:  round,
-			Block:  blockID,
-			Valid:  blockID != "",
+			From:       n.ID,
+			Type:       types.Proposal,
+			Height:     height,
+			Round:      round,
+			Block:      blockID,
+			Valid:      blockID != "",
+			ValidRound: n.state.ValidRound,
 		}
+		n.signMessage(&proposal)
 		n.logf(proposal.Type.Color(), "Proposed block: %s", formatBlockForLog(proposal.Block, proposal.Valid))
 		n.broadcast(proposal)
 		n.handleProposal(proposal, true)

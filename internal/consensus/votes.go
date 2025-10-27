@@ -56,9 +56,9 @@ func (n *Node) handleProposal(msg types.Message, local bool) {
 	}
 
 	if local {
-		n.logf(msg.Type.Color(), "Processing own proposal: %s", formatBlockForLog(msg.Block, msg.Valid))
+		n.logf(msg.Type.Color(), "Processing own proposal: %s (validRound=%d)", formatBlockForLog(msg.Block, msg.Valid), msg.ValidRound)
 	} else {
-		n.logf(msg.Type.Color(), "Received proposal from Node %d: %s", msg.From, formatBlockForLog(msg.Block, msg.Valid))
+		n.logf(msg.Type.Color(), "Received proposal from Node %d: %s (validRound=%d)", msg.From, formatBlockForLog(msg.Block, msg.Valid), msg.ValidRound)
 	}
 
 	n.proposalReceived = true
@@ -123,6 +123,7 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 		Block:  voteBlock,
 		Valid:  voteValid,
 	}
+	n.signMessage(&prevote)
 	n.logf(prevote.Type.Color(), "Broadcasting prevote (%s): %s", voteReason, formatBlockForLog(prevote.Block, prevote.Valid))
 	n.recordPrevote(prevote)
 	n.broadcast(prevote)
@@ -138,6 +139,7 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 			Block:  conflictBlock,
 			Valid:  conflictValid,
 		}
+		n.signMessage(&conflict)
 		n.logf(conflict.Type.Color(), "Byzantine prevote (conflict): %s", formatBlockForLog(conflict.Block, conflict.Valid))
 		n.broadcast(conflict)
 	}
@@ -200,6 +202,7 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 		Block:  voteBlock,
 		Valid:  voteValid,
 	}
+	n.signMessage(&precommit)
 	n.logf(precommit.Type.Color(), "Broadcasting precommit (%s): %s", voteReason, formatBlockForLog(precommit.Block, precommit.Valid))
 	n.recordPrecommit(precommit)
 	n.broadcast(precommit)
@@ -215,6 +218,7 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 			Block:  conflictBlock,
 			Valid:  conflictValid,
 		}
+		n.signMessage(&conflict)
 		n.logf(conflict.Type.Color(), "Byzantine precommit (conflict): %s", formatBlockForLog(conflict.Block, conflict.Valid))
 		n.broadcast(conflict)
 	}
@@ -408,6 +412,7 @@ func (n *Node) checkPrecommitQuorum(height, round int, block string, valid bool)
 		Block:  block,
 		Valid:  true,
 	}
+	n.signMessage(&commit)
 	n.broadcast(commit)
 }
 
@@ -430,7 +435,11 @@ func (n *Node) reportEvidence(height, round int, stage types.MessageType, offend
 		Round:    round,
 		Evidence: evidence,
 	}
+	n.signMessage(&msg)
 	n.broadcast(msg)
+	if n.net != nil {
+		n.net.ReportMisbehavior(n.ID, offender, "double-sign evidence")
+	}
 	n.jailedPeers[offender] = true
 	if offender == n.ID && n.state != nil {
 		n.state.Jailed = true
@@ -440,16 +449,23 @@ func (n *Node) reportEvidence(height, round int, stage types.MessageType, offend
 }
 
 func (n *Node) proposerFor(height, round int) int {
-	start := (height + round) % n.total
-	total := n.total
-	for i := 0; i < total; i++ {
-		candidate := (start + i) % total
-		if n.jailedPeers != nil && n.jailedPeers[candidate] {
-			continue
-		}
-		return candidate
+	ids, totalPower := n.activeValidatorIDs()
+	if len(ids) == 0 {
+		return n.ID
 	}
-	return start
+	if totalPower <= 0 {
+		return ids[0]
+	}
+
+	offset := (height + round) % totalPower
+	for _, id := range ids {
+		power := n.powerMap[id]
+		if offset < power {
+			return id
+		}
+		offset -= power
+	}
+	return ids[0]
 }
 
 func (n *Node) selectProposalBlock(height, round int) string {
@@ -467,20 +483,7 @@ func (n *Node) recomputeQuorum() {
 		}
 		n.powerMap[n.ID] = n.power
 	}
-	activePower := 0
-	for id, power := range n.powerMap {
-		if power <= 0 {
-			continue
-		}
-		jailed := n.jailedPeers != nil && n.jailedPeers[id]
-		if id == n.ID && n.state != nil && n.state.Jailed {
-			jailed = true
-		}
-		if jailed {
-			continue
-		}
-		activePower += power
-	}
+	_, activePower := n.activeValidatorIDs()
 	if activePower <= 0 {
 		activePower = n.power
 	}

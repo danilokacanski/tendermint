@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 type MessageType int
 
 const (
@@ -20,13 +22,15 @@ const (
 )
 
 type Message struct {
-	From     int
-	Type     MessageType
-	Height   int
-	Round    int
-	Block    string
-	Valid    bool
-	Evidence *Evidence
+	From       int
+	Type       MessageType
+	Height     int
+	Round      int
+	Block      string
+	Valid      bool
+	ValidRound int
+	Signature  []byte
+	Evidence   *Evidence
 }
 
 type Evidence struct {
@@ -69,4 +73,15 @@ func (mt MessageType) Label() string {
 	default:
 		return "Unknown"
 	}
+}
+
+func SignBytes(msg *Message) []byte {
+	return []byte(fmt.Sprintf("%d|%d|%d|%s|%t|%d",
+		msg.Type,
+		msg.Height,
+		msg.Round,
+		msg.Block,
+		msg.Valid,
+		msg.ValidRound,
+	))
 }

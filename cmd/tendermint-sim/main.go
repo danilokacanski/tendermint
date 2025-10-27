@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	powers := []int{3, 2, 2, 1, 1}
+	powers := []int{3, 2, 2, 1, 1, 1}
 	totalNodes := len(powers)
 	totalHeights := 3
 	rand.Seed(time.Now().UnixNano())
@@ -43,6 +43,7 @@ func main() {
 	for i, p := range powers {
 		powerMap[i] = p
 	}
+	peerMap := buildRingPeers(totalNodes)
 
 	nodes := make([]*consensus.Node, totalNodes)
 	for i := 0; i < totalNodes; i++ {
@@ -51,7 +52,7 @@ func main() {
 			node.SetBehavior(b)
 			fmt.Printf("Node %d configured as Byzantine: %+v\n", i, *b)
 		}
-		node.SetNetwork(net)
+		node.SetNetwork(net, peerMap[i])
 		nodes[i] = node
 	}
 
@@ -65,4 +66,20 @@ func main() {
 	}
 
 	time.Sleep(500 * time.Millisecond)
+}
+
+func buildRingPeers(total int) map[int][]int {
+	if total <= 0 {
+		return nil
+	}
+	if total == 1 {
+		return map[int][]int{0: nil}
+	}
+	peers := make(map[int][]int, total)
+	for i := 0; i < total; i++ {
+		left := (i - 1 + total) % total
+		right := (i + 1) % total
+		peers[i] = []int{left, right}
+	}
+	return peers
 }

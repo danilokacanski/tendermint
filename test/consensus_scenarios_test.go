@@ -94,7 +94,14 @@ func makeNodesWithPowers(powers []int, net *network.SimulatedNetwork, behaviors 
 				node.SetBehavior(b)
 			}
 		}
-		node.SetNetwork(net)
+		peers := make([]int, 0, len(powers)-1)
+		for j := range powers {
+			if j == i {
+				continue
+			}
+			peers = append(peers, j)
+		}
+		node.SetNetwork(net, peers)
 		nodes[i] = node
 	}
 	return nodes

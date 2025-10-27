@@ -12,7 +12,7 @@ This repository provides a self-contained Tendermint-style consensus simulator. 
 ```
 cmd/tendermint-sim/    # CLI entrypoint: wires validators, network, behaviours
 internal/consensus/    # Node state machine, voting logic, round management
-internal/network/      # Simulated gossip transport with latency/jitter control
+internal/network/      # Simulated gossip transport with latency/jitter control, peer topology, signature verification, misbehaviour handling
 internal/types/        # Shared message and colour definitions
 test/                  # Integration scenarios exercising the protocol behaviour
 ```
@@ -64,5 +64,5 @@ The tests spin up validators with deterministic network settings and verify core
 ## Customising
 
 - Adjust validator powers and Byzantine behaviours in `cmd/tendermint-sim/main.go`.
-- Tweak network latency, jitter, or logging using options in `internal/network`.
+- Tune network latency, jitter, logging, peer topology, and signature validation options using helpers in `internal/network`.
 - Extend the test scenarios under `test/` to cover new edge cases or protocol changes.

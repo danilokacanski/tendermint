@@ -1,7 +1,10 @@
 package consensus
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
+	"sort"
 	"time"
 
 	"Tendermint/internal/network"
@@ -49,6 +52,9 @@ type Node struct {
 	In  chan types.Message
 	net network.Network
 
+	privKey ed25519.PrivateKey
+	pubKey  ed25519.PublicKey
+
 	total int
 
 	currentHeight int
@@ -94,9 +100,15 @@ type Node struct {
 	roundStart           int
 	maxTimeout           time.Duration
 	aborted              bool
+
+	peers []int
 }
 
 func NewNode(id int, power int, powerMap map[int]int) *Node {
+    pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate key for node %d: %v", id, err))
+	}
 	if powerMap == nil {
 		powerMap = make(map[int]int)
 	}
@@ -114,7 +126,18 @@ func NewNode(id int, power int, powerMap map[int]int) *Node {
 		prevoteTimeout:   200 * time.Millisecond,
 		precommitTimeout: 200 * time.Millisecond,
 		maxTimeout:       10 * time.Second,
+		privKey:          priv,
+		pubKey:           pub,
 	}
+}
+
+func (n *Node) PublicKey() ed25519.PublicKey {
+	return append(ed25519.PublicKey(nil), n.pubKey...)
+}
+
+func (n *Node) SetKeyPair(pub ed25519.PublicKey, priv ed25519.PrivateKey) {
+	n.pubKey = append(ed25519.PublicKey(nil), pub...)
+	n.privKey = append(ed25519.PrivateKey(nil), priv...)
 }
 
 func (n *Node) SetBehavior(b *ByzantineBehavior) {
@@ -142,12 +165,20 @@ func (n *Node) SetMaxTimeout(d time.Duration) {
 	}
 }
 
-func (n *Node) SetNetwork(net network.Network) {
+func (n *Node) SetNetwork(net network.Network, peers []int) {
 	n.net = net
 	if n.In == nil {
 		n.In = make(chan types.Message, 64)
 	}
-	net.Register(n.ID, n.In)
+	n.peers = append([]int(nil), peers...)
+	net.Register(n.ID, n.In, n.peers, n.pubKey)
+}
+
+func (n *Node) SetPeers(peers []int) {
+	n.peers = append([]int(nil), peers...)
+	if n.net != nil {
+		n.net.UpdatePeers(n.ID, n.peers)
+	}
 }
 
 func (n *Node) SetPowerMap(powerMap map[int]int) {
@@ -185,6 +216,36 @@ func (n *Node) Identifier() int {
 	return n.ID
 }
 
+func (n *Node) isJailed(id int) bool {
+	if n.jailedPeers != nil && n.jailedPeers[id] {
+		return true
+	}
+	if id == n.ID && n.state != nil && n.state.Jailed {
+		return true
+	}
+	return false
+}
+
+func (n *Node) activeValidatorIDs() ([]int, int) {
+	if n.powerMap == nil {
+		return nil, 0
+	}
+	ids := make([]int, 0, len(n.powerMap))
+	total := 0
+	for id, power := range n.powerMap {
+		if power <= 0 {
+			continue
+		}
+		if n.isJailed(id) {
+			continue
+		}
+		ids = append(ids, id)
+		total += power
+	}
+	sort.Ints(ids)
+	return ids, total
+}
+
 func (n *Node) broadcast(msg types.Message) {
 	if n.net == nil {
 		return
@@ -197,6 +258,14 @@ func (n *Node) unicast(to int, msg types.Message) {
 		return
 	}
 	n.net.Unicast(n.ID, to, msg)
+}
+
+func (n *Node) signMessage(msg *types.Message) {
+	if n.privKey == nil {
+		return
+	}
+	signBytes := types.SignBytes(msg)
+	msg.Signature = ed25519.Sign(n.privKey, signBytes)
 }
 
 func (n *Node) configureTimeouts(startRound int) {
