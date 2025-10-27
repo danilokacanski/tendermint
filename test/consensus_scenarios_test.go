@@ -31,7 +31,7 @@ func TestConsensusCommitsWithHonestMajority(t *testing.T) {
 
 	nodes := makeNodesWithPowers(powers, net, nil)
 
-	if success := consensus.RunConsensus(nodes, 1, 1); !success {
+	if _, success := consensus.RunConsensus(nodes, 1, 1); !success {
 		t.Fatalf("expected consensus to succeed with honest majority")
 	}
 
@@ -65,7 +65,7 @@ func TestConsensusAbortsWhenFaultsExceedThreshold(t *testing.T) {
 		n.SetTimeouts(20*time.Millisecond, 30*time.Millisecond, 40*time.Millisecond)
 	}
 
-	if success := consensus.RunConsensus(nodes, 1, 1); success {
+	if _, success := consensus.RunConsensus(nodes, 1, 1); success {
 		t.Fatalf("expected consensus to abort with >1/3 Byzantine power")
 	}
 

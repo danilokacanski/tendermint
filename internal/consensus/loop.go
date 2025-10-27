@@ -1,6 +1,10 @@
 package consensus
 
-import "Tendermint/internal/types"
+import (
+	"time"
+
+	"Tendermint/internal/types"
+)
 
 func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 	if n.state == nil {
@@ -23,10 +27,26 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 	n.committed = false
 	n.committedBlock = ""
 	n.active = true
-	defer func() { n.active = false }()
+	defer func() {
+		n.active = false
+		n.activeMetrics = nil
+	}()
+
+	if n.metrics == nil {
+		n.metrics = make(map[int]*HeightMetrics)
+	}
+	metric := &HeightMetrics{
+		Height:          height,
+		ProposerByRound: make(map[int]int),
+		StartTime:       time.Now(),
+	}
+	n.metrics[height] = metric
+	n.activeMetrics = metric
 
 	if n.state.Jailed {
 		n.logf(types.ColorEvidence, "Validator jailed; skipping height %d", height)
+		metric.Success = true
+		metric.CommitDuration = 0
 		return true
 	}
 
@@ -73,6 +93,31 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 		}
 	}
 
+	if metric != nil {
+		if n.state != nil {
+			metric.LockedRound = n.state.LockedRound
+			metric.LockedValue = n.state.LockedBlock
+			metric.ValidRound = n.state.ValidRound
+			metric.ValidValue = n.state.ValidBlock
+		}
+		if n.committed && metric.CommitTime.IsZero() {
+			metric.CommitTime = time.Now()
+			metric.CommitDuration = metric.CommitTime.Sub(metric.StartTime)
+			if metric.CommitBlock == "" {
+				metric.CommitBlock = n.committedBlock
+			}
+			if metric.CommitRound == 0 {
+				metric.CommitRound = n.currentRound
+			}
+		}
+		if !metric.Success {
+			metric.Success = n.committed && !metric.Aborted
+		}
+		if !metric.Success && metric.CommitDuration == 0 {
+			metric.CommitDuration = time.Since(metric.StartTime)
+		}
+	}
+
 	n.lastCommittedBlock = n.committedBlock
 	n.lastCommittedHeight = height
 	return n.committed
@@ -94,6 +139,14 @@ Loop:
 }
 
 func (n *Node) runRound(height int, round int) {
+	var proposer int
+	if n.activeMetrics != nil {
+		n.activeMetrics.RoundsAttempted++
+		proposer = n.proposerFor(height, round)
+		n.activeMetrics.ProposerByRound[round] = proposer
+	} else {
+		proposer = n.proposerFor(height, round)
+	}
 	n.currentRound = round
 	n.roundActive = true
 	n.proposalReceived = false
@@ -105,7 +158,7 @@ func (n *Node) runRound(height int, round int) {
 		return
 	}
 
-	if n.ID == n.proposerFor(height, round) {
+	if n.ID == proposer {
 		blockID := n.selectProposalBlock(height, round)
 		proposal := types.Message{
 			From:       n.ID,

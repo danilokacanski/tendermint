@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"fmt"
+	"time"
 
 	"Tendermint/internal/types"
 )
@@ -257,6 +258,19 @@ func (n *Node) handleCommit(msg types.Message) {
 		n.committed = true
 		n.roundActive = false
 		n.committedBlock = msg.Block
+		if n.activeMetrics != nil {
+			if n.activeMetrics.CommitRound == 0 {
+				n.activeMetrics.CommitRound = msg.Round
+			}
+			if n.activeMetrics.CommitBlock == "" {
+				n.activeMetrics.CommitBlock = msg.Block
+			}
+			if n.activeMetrics.CommitTime.IsZero() {
+				n.activeMetrics.CommitTime = time.Now()
+				n.activeMetrics.CommitDuration = n.activeMetrics.CommitTime.Sub(n.activeMetrics.StartTime)
+			}
+			n.activeMetrics.Success = true
+		}
 		n.logf(msg.Type.Color(), "Commit observed from Node %d: %s ✅", msg.From, formatBlockForLog(msg.Block, msg.Valid))
 	} else {
 		n.logf(msg.Type.Color(), "Received nil commit from Node %d", msg.From)
@@ -403,6 +417,20 @@ func (n *Node) checkPrecommitQuorum(height, round int, block string, valid bool)
 	n.roundActive = false
 	n.committedBlock = block
 	n.logf(types.ColorCommit, "Committed block: %s ✅", block)
+
+	if n.activeMetrics != nil {
+		if n.activeMetrics.CommitRound == 0 {
+			n.activeMetrics.CommitRound = round
+		}
+		if n.activeMetrics.CommitBlock == "" {
+			n.activeMetrics.CommitBlock = block
+		}
+		if n.activeMetrics.CommitTime.IsZero() {
+			n.activeMetrics.CommitTime = time.Now()
+			n.activeMetrics.CommitDuration = n.activeMetrics.CommitTime.Sub(n.activeMetrics.StartTime)
+		}
+		n.activeMetrics.Success = true
+	}
 
 	commit := types.Message{
 		From:   n.ID,

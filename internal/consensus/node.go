@@ -102,10 +102,13 @@ type Node struct {
 	aborted              bool
 
 	peers []int
+
+	metrics       map[int]*HeightMetrics
+	activeMetrics *HeightMetrics
 }
 
 func NewNode(id int, power int, powerMap map[int]int) *Node {
-    pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		panic(fmt.Sprintf("failed to generate key for node %d: %v", id, err))
 	}
@@ -128,6 +131,7 @@ func NewNode(id int, power int, powerMap map[int]int) *Node {
 		maxTimeout:       10 * time.Second,
 		privKey:          priv,
 		pubKey:           pub,
+		metrics:          make(map[int]*HeightMetrics),
 	}
 }
 
@@ -191,6 +195,23 @@ func (n *Node) RecomputeQuorum() {
 
 func (n *Node) QuorumPower() int {
 	return n.quorumPower
+}
+
+func (n *Node) MetricsForHeight(height int) *HeightMetrics {
+	if n.metrics == nil {
+		return nil
+	}
+	if m, ok := n.metrics[height]; ok && m != nil {
+		copy := *m
+		if m.ProposerByRound != nil {
+			copy.ProposerByRound = make(map[int]int, len(m.ProposerByRound))
+			for k, v := range m.ProposerByRound {
+				copy.ProposerByRound[k] = v
+			}
+		}
+		return &copy
+	}
+	return nil
 }
 
 func (n *Node) JailPeer(id int) {
@@ -357,6 +378,14 @@ func (n *Node) abortConsensus(height, round int, timeout time.Duration) {
 	n.aborted = true
 	n.roundActive = false
 	n.logf(types.ColorEvidence, "Aborting height %d at round %d: timeout %s exceeds limit %s", height, round, timeout, n.maxTimeout)
+	if n.activeMetrics != nil {
+		n.activeMetrics.Aborted = true
+		n.activeMetrics.AbortReason = fmt.Sprintf("timeout %s exceeded cap %s (round %d)", timeout, n.maxTimeout, round)
+		if n.activeMetrics.CommitDuration == 0 {
+			n.activeMetrics.CommitDuration = time.Since(n.activeMetrics.StartTime)
+		}
+		n.activeMetrics.Success = false
+	}
 }
 
 func (n *Node) scheduleEvent(after time.Duration, kind eventType, height, round int) {
