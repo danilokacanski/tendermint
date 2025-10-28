@@ -11,21 +11,17 @@ func main() {
 	base := SimulationConfig{
 		Label:            "baseline",
 		Powers:           []int{3, 2, 2, 1, 1, 1},
-		Heights:          3,
+		Heights:          5,
 		DelayMinMs:       10,
 		DelayMaxMs:       30,
 		GossipJitter:     20 * time.Millisecond,
 		ProposalTimeout:  750 * time.Millisecond,
 		PrevoteTimeout:   650 * time.Millisecond,
 		PrecommitTimeout: 650 * time.Millisecond,
-		MaxTimeout:       20 * time.Second,
+		MaxTimeout:       0,
 		Topology:         "ring",
 		Byzantine: map[int]*ByzantineConfig{
 			0: {
-				SilentPrevote:   true,
-				SilentPrecommit: true,
-			},
-			5: {
 				SilentPrevote:   true,
 				SilentPrecommit: true,
 			},
@@ -33,10 +29,12 @@ func main() {
 	}
 
 	grid := SimulationGrid{
-		// Heights:          []int{3},
-		// GossipJitters:    []time.Duration{25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond},
-		// ProposalTimeouts: []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, 750 * time.Millisecond},
-		// Topologies:       []string{"ring", "full"},
+		Heights:           []int{5},
+		GossipJitters:     []time.Duration{25 * time.Millisecond, 50 * time.Millisecond, 75 * time.Millisecond},
+		ProposalTimeouts:  []time.Duration{400 * time.Millisecond, 600 * time.Millisecond},
+		PrevoteTimeouts:   []time.Duration{400 * time.Millisecond, 600 * time.Millisecond},
+		PrecommitTimeouts: []time.Duration{400 * time.Millisecond, 600 * time.Millisecond},
+		Topologies:        []string{"ring"},
 	}
 
 	results, err := RunSimulationGrid(base, grid)

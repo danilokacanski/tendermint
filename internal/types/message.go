@@ -19,6 +19,7 @@ const (
 	ColorPrecommit = "\033[35m"
 	ColorCommit    = "\033[32m"
 	ColorEvidence  = "\033[31m"
+	ColorTimeout   = "\033[95m"
 )
 
 type Message struct {

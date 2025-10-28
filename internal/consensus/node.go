@@ -136,7 +136,6 @@ func NewNode(id int, power int, powerMap map[int]int) *Node {
 		proposalTimeout:  200 * time.Millisecond,
 		prevoteTimeout:   200 * time.Millisecond,
 		precommitTimeout: 200 * time.Millisecond,
-		maxTimeout:       10 * time.Second,
 		privKey:          priv,
 		pubKey:           pub,
 		metrics:          make(map[int]*HeightMetrics),
@@ -175,7 +174,8 @@ func (n *Node) SetTimeouts(proposal, prevote, precommit time.Duration) {
 	}
 }
 
-// SetMaxTimeout caps the escalation multiplier used for stage timeouts.
+// SetMaxTimeout caps the escalation multiplier used for stage timeouts. Passing
+// zero disables the cap, allowing timeouts to grow without bound.
 func (n *Node) SetMaxTimeout(d time.Duration) {
 	if d > 0 {
 		n.maxTimeout = d
@@ -332,9 +332,6 @@ func (n *Node) configureTimeouts(startRound int) {
 	}
 	if n.timeoutMultiplierCap == 0 {
 		n.timeoutMultiplierCap = 16
-	}
-	if n.maxTimeout == 0 {
-		n.maxTimeout = 10 * time.Second
 	}
 	n.roundStart = startRound
 }

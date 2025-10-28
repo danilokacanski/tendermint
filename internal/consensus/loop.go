@@ -90,7 +90,7 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 		round++
 		if roundsTried >= nextEscalation && !n.aborted {
 			newCap := n.escalateTimeoutCap()
-			n.logf(types.ColorPrevote, "Escalating timeouts after %d rounds without quorum (cap=%dx)", roundsTried, newCap)
+			n.logf(types.ColorTimeout, "Escalating timeouts after %d rounds without quorum (cap=%dx)", roundsTried, newCap)
 			nextEscalation *= 2
 		}
 	}

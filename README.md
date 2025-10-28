@@ -50,6 +50,12 @@ By default this boots a baseline scenario and a short grid of hyperparameters. F
 
 Each CSV is accompanied by a `.txt` file with the exact hyperparameters so you can trace results when running large sweeps.
 
+To clean up generated reports you can run:
+
+```sh
+rm -f summary/current/*.csv summary/current/*.txt summary/timeouts/*.csv summary/timeouts/*.txt
+```
+
 ## Running Tests
 
 To execute the deterministic integration tests:

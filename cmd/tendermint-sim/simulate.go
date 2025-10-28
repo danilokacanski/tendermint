@@ -153,12 +153,19 @@ func RunSimulation(cfg SimulationConfig) (string, string, error) {
 	for height := 1; height <= cfg.Heights; height++ {
 		fmt.Printf("\n=== Starting height %d ===\n", height)
 		summary, success := consensus.RunConsensus(nodes, height, 1)
-		if summary != nil {
-			summaries = append(summaries, summary)
+		if summary == nil {
+			summary = &consensus.HeightSummary{Height: height, Success: success}
 		}
-		if !success {
+		summary.Height = height
+		summary.Success = success && summary.Success
+		if !summary.Success {
+			summary.CommitBlock = ""
+			summary.CommitDuration = 0
+			summary.CommitProposer = 0
+		}
+		summaries = append(summaries, summary)
+		if !summary.Success {
 			fmt.Printf("[Height %d] Aborted: validators exceeded max consensus timeout\n", height)
-			break
 		}
 	}
 
