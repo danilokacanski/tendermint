@@ -15,6 +15,8 @@ import (
 	"Tendermint/internal/types"
 )
 
+// ByzantineConfig describes optional faulty behaviours a validator can exhibit
+// during the simulation. Fields map 1:1 to internal/consensus.ByzantineBehavior.
 type ByzantineConfig struct {
 	EquivocatePrevote   bool
 	EquivocatePrecommit bool
@@ -24,6 +26,8 @@ type ByzantineConfig struct {
 	SilentPrecommit     bool
 }
 
+// SimulationConfig captures a single simulator configuration. Most fields have
+// sensible defaults so callers can override only what they need.
 type SimulationConfig struct {
 	Label            string
 	Powers           []int
@@ -42,6 +46,8 @@ type SimulationConfig struct {
 	LogNetwork       bool
 }
 
+// SimulationGrid lists per-dimension option sets; RunSimulationGrid will take
+// the Cartesian product of the supplied values and execute every scenario.
 type SimulationGrid struct {
 	Labels            []string
 	PowerSets         [][]int
@@ -60,12 +66,16 @@ type SimulationGrid struct {
 	ByzantineVariants []map[int]*ByzantineConfig
 }
 
+// RunArtifact records the result of a single simulation run together with the
+// exact configuration and generated CSV paths.
 type RunArtifact struct {
 	Config           SimulationConfig
 	ConsensusSummary string
 	TimeoutSummary   string
 }
 
+// RunSimulation executes one simulator run using the supplied configuration and
+// returns the paths to the consensus and timeout CSV reports.
 func RunSimulation(cfg SimulationConfig) (string, string, error) {
 	if len(cfg.Powers) == 0 {
 		return "", "", fmt.Errorf("simulation requires at least one validator power entry")
@@ -180,6 +190,8 @@ func RunSimulation(cfg SimulationConfig) (string, string, error) {
 	return consensusPath, timeoutPath, nil
 }
 
+// RunSimulationGrid iterates across all combinations defined in the grid (using
+// the base config as defaults) and calls RunSimulation for each combination.
 func RunSimulationGrid(base SimulationConfig, grid SimulationGrid) ([]RunArtifact, error) {
 	choices := buildGridChoices(grid)
 	if len(choices) == 0 {
@@ -225,11 +237,15 @@ func RunSimulationGrid(base SimulationConfig, grid SimulationGrid) ([]RunArtifac
 	return results, nil
 }
 
+// gridChoice is a helper that ties a descriptive label and an apply function so
+// SimulationGrid dimensions can be processed uniformly.
 type gridChoice struct {
 	label string
 	apply func(*SimulationConfig)
 }
 
+// buildGridChoices converts every populated SimulationGrid field into a list of
+// options per dimension for later Cartesian-product traversal.
 func buildGridChoices(grid SimulationGrid) [][]gridChoice {
 	var fields [][]gridChoice
 	if len(grid.Labels) > 0 {
@@ -407,6 +423,8 @@ func buildGridChoices(grid SimulationGrid) [][]gridChoice {
 	return fields
 }
 
+// combineLabel merges the base label and dimension descriptors into a
+// filesystem-safe identifier used when naming CSV/metadata outputs.
 func combineLabel(base string, parts []string) string {
 	var segments []string
 	if base != "" {
@@ -424,6 +442,8 @@ func combineLabel(base string, parts []string) string {
 	return strings.Join(segments, "_")
 }
 
+// formatIntSlice renders the voting-power distribution as a short string (e.g.
+// 3-2-1-1) to keep labels human readable.
 func formatIntSlice(values []int) string {
 	if len(values) == 0 {
 		return ""
@@ -435,6 +455,8 @@ func formatIntSlice(values []int) string {
 	return strings.Join(parts, "-")
 }
 
+// cloneByzantineMap creates a deep copy of the byzantine configuration map so
+// every run can mutate its own copy without affecting others.
 func cloneByzantineMap(src map[int]*ByzantineConfig) map[int]*ByzantineConfig {
 	if src == nil {
 		return nil
@@ -451,6 +473,7 @@ func cloneByzantineMap(src map[int]*ByzantineConfig) map[int]*ByzantineConfig {
 	return clone
 }
 
+// buildPeers picks the appropriate peer topology builder.
 func buildPeers(topology string, total int) map[int][]int {
 	if topology == "full" {
 		return buildFullPeers(total)
@@ -458,6 +481,8 @@ func buildPeers(topology string, total int) map[int][]int {
 	return buildRingPeers(total)
 }
 
+// buildRingPeers returns a bidirectional ring (each validator connected to its
+// immediate neighbours).
 func buildRingPeers(total int) map[int][]int {
 	if total <= 0 {
 		return nil
@@ -474,6 +499,7 @@ func buildRingPeers(total int) map[int][]int {
 	return peers
 }
 
+// buildFullPeers connects every validator with every other validator.
 func buildFullPeers(total int) map[int][]int {
 	if total <= 0 {
 		return nil
@@ -492,6 +518,8 @@ func buildFullPeers(total int) map[int][]int {
 	return peers
 }
 
+// writeConsensusSummaryCSV dumps the per-height consensus metrics to disk and
+// returns the resulting path.
 func writeConsensusSummaryCSV(dir, baseName string, summaries []*consensus.HeightSummary) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating summary directory: %w", err)
@@ -550,6 +578,8 @@ func writeConsensusSummaryCSV(dir, baseName string, summaries []*consensus.Heigh
 	return path, nil
 }
 
+// writeTimeoutSummaryCSV dumps the timeout counters per height to disk and
+// returns the resulting path.
 func writeTimeoutSummaryCSV(dir, baseName string, summaries []*consensus.HeightSummary) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating timeout summary directory: %w", err)
@@ -597,6 +627,8 @@ func writeTimeoutSummaryCSV(dir, baseName string, summaries []*consensus.HeightS
 	return path, nil
 }
 
+// writeMetadataFile persists the full configuration next to the generated CSV
+// so downstream tooling knows exactly which parameters produced the run.
 func writeMetadataFile(dir, baseName string, cfg SimulationConfig) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating metadata directory: %w", err)

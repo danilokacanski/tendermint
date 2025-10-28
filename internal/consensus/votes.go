@@ -7,6 +7,7 @@ import (
 	"Tendermint/internal/types"
 )
 
+// handleMessage routes inbound gossip messages for the current height/round.
 func (n *Node) handleMessage(msg types.Message) {
 	if msg.Height < n.currentHeight {
 		return
@@ -40,6 +41,7 @@ func (n *Node) handleMessage(msg types.Message) {
 	}
 }
 
+// handleEvent reacts to scheduled timeout events.
 func (n *Node) handleEvent(ev consensusEvent) {
 	switch ev.kind {
 	case eventProposalTimeout:
@@ -51,6 +53,8 @@ func (n *Node) handleEvent(ev consensusEvent) {
 	}
 }
 
+// handleProposal processes the current round's proposal and decides whether to
+// prevote for it (subject to Tendermint locking rules).
 func (n *Node) handleProposal(msg types.Message, local bool) {
 	if n.committed || msg.Round != n.currentRound || msg.Height != n.currentHeight {
 		return
@@ -79,6 +83,7 @@ func (n *Node) handleProposal(msg types.Message, local bool) {
 	n.sendPrevote(msg.Height, msg.Round, voteBlock, voteValid, "proposal")
 }
 
+// onProposalTimeout handles the proposal-stage timeout by prevoting nil.
 func (n *Node) onProposalTimeout(round int) {
 	if n.committed || round != n.currentRound || n.prevoteSent {
 		return
@@ -90,6 +95,8 @@ func (n *Node) onProposalTimeout(round int) {
 	n.sendPrevote(n.currentHeight, round, "", false, "timeout")
 }
 
+// sendPrevote emits the validator's prevote for the round, respecting any
+// configured Byzantine behaviours.
 func (n *Node) sendPrevote(height, round int, block string, valid bool, reason string) {
 	if n.prevoteSent {
 		return
@@ -151,6 +158,7 @@ func (n *Node) sendPrevote(height, round int, block string, valid bool, reason s
 	n.scheduleStageTimeout(eventPrevoteTimeout, height, round)
 }
 
+// handlePrevote records an observed prevote and checks for quorum.
 func (n *Node) handlePrevote(msg types.Message) {
 	if n.committed || msg.Round != n.currentRound || msg.Height != n.currentHeight {
 		return
@@ -161,6 +169,7 @@ func (n *Node) handlePrevote(msg types.Message) {
 	}
 }
 
+// onPrevoteTimeout handles the prevote-stage timeout by precommitting nil.
 func (n *Node) onPrevoteTimeout(round int) {
 	if n.committed || round != n.currentRound || n.precommitSent {
 		return
@@ -172,6 +181,7 @@ func (n *Node) onPrevoteTimeout(round int) {
 	n.sendPrecommit(n.currentHeight, round, "", false, "timeout")
 }
 
+// sendPrecommit broadcasts the validator's precommit for the round.
 func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason string) {
 	if n.precommitSent {
 		return
@@ -233,6 +243,7 @@ func (n *Node) sendPrecommit(height, round int, block string, valid bool, reason
 	n.scheduleStageTimeout(eventPrecommitTimeout, height, round)
 }
 
+// handlePrecommit records an observed precommit and checks for quorum.
 func (n *Node) handlePrecommit(msg types.Message) {
 	if n.committed || msg.Round != n.currentRound || msg.Height != n.currentHeight {
 		return
@@ -243,6 +254,7 @@ func (n *Node) handlePrecommit(msg types.Message) {
 	}
 }
 
+// onPrecommitTimeout advances the round when precommits fail to reach quorum.
 func (n *Node) onPrecommitTimeout(round int) {
 	if n.committed || round != n.currentRound {
 		return
@@ -254,6 +266,7 @@ func (n *Node) onPrecommitTimeout(round int) {
 	n.roundActive = false
 }
 
+// handleCommit reacts to a commit message from another validator.
 func (n *Node) handleCommit(msg types.Message) {
 	if msg.Height != n.currentHeight {
 		if msg.Height > n.currentHeight {
@@ -286,6 +299,7 @@ func (n *Node) handleCommit(msg types.Message) {
 	}
 }
 
+// handleEvidence updates local state when double-sign evidence is received.
 func (n *Node) handleEvidence(msg types.Message) {
 	if msg.Evidence == nil {
 		return
@@ -303,6 +317,8 @@ func (n *Node) handleEvidence(msg types.Message) {
 	n.recomputeQuorum()
 }
 
+// recordPrevote stores a prevote in local vote sets and reports evidence if the
+// voter double-signs.
 func (n *Node) recordPrevote(msg types.Message) bool {
 	if n.jailedPeers != nil && n.jailedPeers[msg.From] {
 		return false
@@ -335,6 +351,7 @@ func (n *Node) recordPrevote(msg types.Message) bool {
 	return true
 }
 
+// recordPrecommit stores a precommit and reports evidence upon conflicts.
 func (n *Node) recordPrecommit(msg types.Message) bool {
 	if n.jailedPeers != nil && n.jailedPeers[msg.From] {
 		return false
@@ -367,6 +384,8 @@ func (n *Node) recordPrecommit(msg types.Message) bool {
 	return true
 }
 
+// checkPrevoteQuorum inspects accumulated prevotes and reacts when +2/3 power
+// is observed for a block (or nil).
 func (n *Node) checkPrevoteQuorum(height, round int, block string, valid bool) {
 	key := blockKey(block, valid)
 	roundPower, ok := n.prevotePower[round]
@@ -405,6 +424,7 @@ func (n *Node) checkPrevoteQuorum(height, round int, block string, valid bool) {
 	}
 }
 
+// checkPrecommitQuorum handles transitions once precommits reach +2/3 power.
 func (n *Node) checkPrecommitQuorum(height, round int, block string, valid bool) {
 	key := blockKey(block, valid)
 	roundPower, ok := n.precommitPower[round]

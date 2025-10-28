@@ -5,10 +5,12 @@ import (
 	"time"
 )
 
+// main defines a baseline configuration and a small grid of variations, then
+// executes every combination and prints the generated report paths.
 func main() {
 	base := SimulationConfig{
 		Label:            "baseline",
-		Powers:           []int{3, 2, 2, 1, 1, 1, 2, 4, 6, 8},
+		Powers:           []int{3, 2, 2, 1, 1, 1},
 		Heights:          3,
 		DelayMinMs:       10,
 		DelayMaxMs:       30,
@@ -23,14 +25,18 @@ func main() {
 				SilentPrevote:   true,
 				SilentPrecommit: true,
 			},
+			5: {
+				SilentPrevote:   true,
+				SilentPrecommit: true,
+			},
 		},
 	}
 
 	grid := SimulationGrid{
-		Heights:          []int{3},
-		GossipJitters:    []time.Duration{25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond},
-		ProposalTimeouts: []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, 750 * time.Millisecond},
-		Topologies:       []string{"ring", "full"},
+		// Heights:          []int{3},
+		// GossipJitters:    []time.Duration{25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond},
+		// ProposalTimeouts: []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, 750 * time.Millisecond},
+		// Topologies:       []string{"ring", "full"},
 	}
 
 	results, err := RunSimulationGrid(base, grid)

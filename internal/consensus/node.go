@@ -27,6 +27,8 @@ type consensusEvent struct {
 	kind   eventType
 }
 
+// ByzantineBehavior describes the optional faulty actions a validator can take
+// during consensus (skipping, equivocating, forcing nil votes, etc.).
 type ByzantineBehavior struct {
 	EquivocatePrevote   bool
 	EquivocatePrecommit bool
@@ -36,6 +38,8 @@ type ByzantineBehavior struct {
 	SilentPrecommit     bool
 }
 
+// ValidatorState persists local locking/validity information as well as
+// received evidence for a single validator.
 type ValidatorState struct {
 	LockedBlock  string
 	LockedRound  int
@@ -47,6 +51,8 @@ type ValidatorState struct {
 	Jailed       bool
 }
 
+// Node represents a single validator in the simulator: it owns signing keys,
+// tracks per-height state and interacts with the simulated network.
 type Node struct {
 	ID  int
 	In  chan types.Message
@@ -107,6 +113,8 @@ type Node struct {
 	activeMetrics *HeightMetrics
 }
 
+// NewNode constructs a validator with freshly generated keys and default
+// timeout settings. Power information is recorded in the shared powerMap.
 func NewNode(id int, power int, powerMap map[int]int) *Node {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -135,19 +143,23 @@ func NewNode(id int, power int, powerMap map[int]int) *Node {
 	}
 }
 
+// PublicKey returns a defensive copy of the node's public key.
 func (n *Node) PublicKey() ed25519.PublicKey {
 	return append(ed25519.PublicKey(nil), n.pubKey...)
 }
 
+// SetKeyPair overrides the validator's keypair (used mostly in tests).
 func (n *Node) SetKeyPair(pub ed25519.PublicKey, priv ed25519.PrivateKey) {
 	n.pubKey = append(ed25519.PublicKey(nil), pub...)
 	n.privKey = append(ed25519.PrivateKey(nil), priv...)
 }
 
+// SetBehavior installs optional Byzantine switches for the validator.
 func (n *Node) SetBehavior(b *ByzantineBehavior) {
 	n.behavior = b
 }
 
+// SetTimeouts customises the base stage timeouts for the validator.
 func (n *Node) SetTimeouts(proposal, prevote, precommit time.Duration) {
 	if proposal > 0 {
 		n.proposalTimeout = proposal
@@ -163,12 +175,15 @@ func (n *Node) SetTimeouts(proposal, prevote, precommit time.Duration) {
 	}
 }
 
+// SetMaxTimeout caps the escalation multiplier used for stage timeouts.
 func (n *Node) SetMaxTimeout(d time.Duration) {
 	if d > 0 {
 		n.maxTimeout = d
 	}
 }
 
+// SetNetwork hooks the validator into the simulated network and registers its
+// initial peer list.
 func (n *Node) SetNetwork(net network.Network, peers []int) {
 	n.net = net
 	if n.In == nil {
@@ -178,6 +193,7 @@ func (n *Node) SetNetwork(net network.Network, peers []int) {
 	net.Register(n.ID, n.In, n.peers, n.pubKey)
 }
 
+// SetPeers updates the validator's view of the network peers.
 func (n *Node) SetPeers(peers []int) {
 	n.peers = append([]int(nil), peers...)
 	if n.net != nil {
@@ -185,18 +201,22 @@ func (n *Node) SetPeers(peers []int) {
 	}
 }
 
+// SetPowerMap replaces the cached voting power mapping.
 func (n *Node) SetPowerMap(powerMap map[int]int) {
 	n.powerMap = powerMap
 }
 
+// RecomputeQuorum recalculates total and quorum voting power (2/3 threshold).
 func (n *Node) RecomputeQuorum() {
 	n.recomputeQuorum()
 }
 
+// QuorumPower exposes the cached +2/3 voting power threshold.
 func (n *Node) QuorumPower() int {
 	return n.quorumPower
 }
 
+// MetricsForHeight returns a copy of the metrics recorded for the given height.
 func (n *Node) MetricsForHeight(height int) *HeightMetrics {
 	if n.metrics == nil {
 		return nil
@@ -214,6 +234,7 @@ func (n *Node) MetricsForHeight(height int) *HeightMetrics {
 	return nil
 }
 
+// JailPeer marks a validator as jailed locally (invoked when evidence appears).
 func (n *Node) JailPeer(id int) {
 	if n.jailedPeers == nil {
 		n.jailedPeers = make(map[int]bool)

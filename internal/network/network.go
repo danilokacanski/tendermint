@@ -19,6 +19,8 @@ const (
 type DelayFunc func(from, to int, msg types.Message) time.Duration
 type LogFunc func(from, to int, msg types.Message, deliveredAt time.Time)
 
+// Network provides the minimal interface the consensus layer expects from a
+// transport implementation.
 type Network interface {
 	Register(id int, inbox chan<- types.Message, peers []int, pubKey ed25519.PublicKey)
 	UpdatePeers(id int, peers []int)
@@ -28,8 +30,11 @@ type Network interface {
 	Stop()
 }
 
+// NetworkOption mutates a SimulatedNetwork during construction.
 type NetworkOption func(*SimulatedNetwork)
 
+// networkEnvelope carries a message and delivery metadata through the
+// SimulatedNetwork worker pool.
 type networkEnvelope struct {
 	from    int
 	to      int
@@ -38,6 +43,8 @@ type networkEnvelope struct {
 	retries int
 }
 
+// SimulatedNetwork multiplexes validator inboxes, injects latency/jitter and
+// enforces basic misbehaviour accounting.
 type SimulatedNetwork struct {
 	mu          sync.RWMutex
 	inboxes     map[int]chan<- types.Message
@@ -60,6 +67,8 @@ type SimulatedNetwork struct {
 	sigRetryBackoff time.Duration
 }
 
+// NewSimulatedNetwork constructs a network simulator with the supplied worker
+// count and functional options.
 func NewSimulatedNetwork(workerCount int, opts ...NetworkOption) *SimulatedNetwork {
 	if workerCount <= 0 {
 		workerCount = 4
@@ -86,24 +95,28 @@ func NewSimulatedNetwork(workerCount int, opts ...NetworkOption) *SimulatedNetwo
 	return net
 }
 
+// WithBroadcastDelay injects a custom delay function for gossip fan-out.
 func WithBroadcastDelay(fn DelayFunc) NetworkOption {
 	return func(n *SimulatedNetwork) {
 		n.broadcastDelay = fn
 	}
 }
 
+// WithUnicastDelay injects a custom delay function for direct sends.
 func WithUnicastDelay(fn DelayFunc) NetworkOption {
 	return func(n *SimulatedNetwork) {
 		n.unicastDelay = fn
 	}
 }
 
+// WithNetworkLogger attaches a callback that records every successful delivery.
 func WithNetworkLogger(fn LogFunc) NetworkOption {
 	return func(n *SimulatedNetwork) {
 		n.logFunc = fn
 	}
 }
 
+// WithRandomSeed fixes the RNG seed to help deterministic test scenarios.
 func WithRandomSeed(seed int64) NetworkOption {
 	return func(n *SimulatedNetwork) {
 		n.rngMu.Lock()
@@ -112,12 +125,14 @@ func WithRandomSeed(seed int64) NetworkOption {
 	}
 }
 
+// WithGossipJitter sets an upper bound for random jitter applied to deliveries.
 func WithGossipJitter(max time.Duration) NetworkOption {
 	return func(n *SimulatedNetwork) {
 		n.gossipJitter = max
 	}
 }
 
+// WithMaxStrikes customises how many misbehaviour reports trigger disconnect.
 func WithMaxStrikes(max int) NetworkOption {
 	return func(n *SimulatedNetwork) {
 		if max > 0 {
@@ -126,6 +141,7 @@ func WithMaxStrikes(max int) NetworkOption {
 	}
 }
 
+// Register installs a validator inbox, peer list and optional public key.
 func (n *SimulatedNetwork) Register(id int, inbox chan<- types.Message, peers []int, pubKey ed25519.PublicKey) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -136,12 +152,14 @@ func (n *SimulatedNetwork) Register(id int, inbox chan<- types.Message, peers []
 	n.setPeersLocked(id, peers)
 }
 
+// UpdatePeers replaces the adjacency list for a validator (bidirectional).
 func (n *SimulatedNetwork) UpdatePeers(id int, peers []int) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.setPeersLocked(id, peers)
 }
 
+// Broadcast gossips a message using a BFS traversal, applying configured delays.
 func (n *SimulatedNetwork) Broadcast(from int, msg types.Message) {
 	snapshot := n.peerSnapshot()
 	if len(snapshot) == 0 {
@@ -168,6 +186,7 @@ func (n *SimulatedNetwork) Broadcast(from int, msg types.Message) {
 	}
 }
 
+// Unicast sends a point-to-point message if a direct edge exists.
 func (n *SimulatedNetwork) Unicast(from int, to int, msg types.Message) {
 	if !n.hasDirectPeer(from, to) {
 		n.recordMisbehavior(from, fmt.Sprintf("attempted to unicast to non-peer %d", to))
@@ -181,10 +200,12 @@ func (n *SimulatedNetwork) Unicast(from int, to int, msg types.Message) {
 	n.enqueue(networkEnvelope{from: from, to: to, msg: msg, delay: delay})
 }
 
+// ReportMisbehavior increments the strike counter for the offender.
 func (n *SimulatedNetwork) ReportMisbehavior(reporter, offender int, reason string) {
 	n.recordMisbehavior(offender, fmt.Sprintf("reported by %d: %s", reporter, reason))
 }
 
+// Stop shuts down delivery workers and waits for them to exit.
 func (n *SimulatedNetwork) Stop() {
 	n.stopOnce.Do(func() {
 		close(n.stopCh)
@@ -192,6 +213,7 @@ func (n *SimulatedNetwork) Stop() {
 	})
 }
 
+// setPeersLocked updates adjacency entries while holding the write lock.
 func (n *SimulatedNetwork) setPeersLocked(id int, peers []int) {
 	if _, ok := n.peers[id]; !ok {
 		n.peers[id] = make(map[int]struct{})
@@ -215,6 +237,7 @@ func (n *SimulatedNetwork) setPeersLocked(id int, peers []int) {
 	}
 }
 
+// peerSnapshot returns a copy of the adjacency list suitable for iteration.
 func (n *SimulatedNetwork) peerSnapshot() map[int][]int {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
@@ -233,6 +256,7 @@ func (n *SimulatedNetwork) peerSnapshot() map[int][]int {
 	return snapshot
 }
 
+// hasDirectPeer checks whether two validators share a direct link.
 func (n *SimulatedNetwork) hasDirectPeer(id, peer int) bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
@@ -244,6 +268,7 @@ func (n *SimulatedNetwork) hasDirectPeer(id, peer int) bool {
 	return exists
 }
 
+// recordMisbehavior increments strike counters and disconnects when necessary.
 func (n *SimulatedNetwork) recordMisbehavior(offender int, reason string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -256,6 +281,7 @@ func (n *SimulatedNetwork) recordMisbehavior(offender int, reason string) {
 	}
 }
 
+// disconnectLocked removes a validator from the network while holding the lock.
 func (n *SimulatedNetwork) disconnectLocked(id int) {
 	delete(n.inboxes, id)
 	neighbors, ok := n.peers[id]
@@ -268,6 +294,7 @@ func (n *SimulatedNetwork) disconnectLocked(id int) {
 	delete(n.pubKeys, id)
 }
 
+// randomJitter samples a jitter duration from [0, gossipJitter].
 func (n *SimulatedNetwork) randomJitter() time.Duration {
 	if n.gossipJitter <= 0 || n.rng == nil {
 		return 0
@@ -282,6 +309,7 @@ func (n *SimulatedNetwork) randomJitter() time.Duration {
 	return time.Duration(delta)
 }
 
+// signatureRetryDelay returns exponential backoff for missing pubkey retries.
 func (n *SimulatedNetwork) signatureRetryDelay(retry int) time.Duration {
 	base := n.sigRetryBackoff
 	if base <= 0 {
@@ -297,6 +325,8 @@ func (n *SimulatedNetwork) signatureRetryDelay(retry int) time.Duration {
 	return delay
 }
 
+// enqueue schedules delivery of a network envelope unless the network is
+// stopping.
 func (n *SimulatedNetwork) enqueue(env networkEnvelope) {
 	select {
 	case <-n.stopCh:
@@ -310,6 +340,7 @@ func (n *SimulatedNetwork) enqueue(env networkEnvelope) {
 	}
 }
 
+// process is the worker loop that pulls envelopes and delivers them.
 func (n *SimulatedNetwork) process() {
 	defer n.wg.Done()
 	for {
@@ -322,6 +353,8 @@ func (n *SimulatedNetwork) process() {
 	}
 }
 
+// deliver performs delayed delivery with signature verification and strike
+// accounting.
 func (n *SimulatedNetwork) deliver(env networkEnvelope) {
 	if env.delay > 0 {
 		timer := time.NewTimer(env.delay)
@@ -371,6 +404,7 @@ func (n *SimulatedNetwork) deliver(env networkEnvelope) {
 }
 
 func DefaultNetworkLogger(from, to int, msg types.Message, deliveredAt time.Time) {
+	// DefaultNetworkLogger prints a concise log line for message deliveries.
 	fmt.Printf("[NET][H%d R%d][%s] %d → %d @ %s\n",
 		msg.Height,
 		msg.Round,

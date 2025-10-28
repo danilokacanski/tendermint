@@ -6,6 +6,8 @@ import (
 	"Tendermint/internal/types"
 )
 
+// StartConsensus drives the height/round loop for a single validator and
+// collects metrics until the node commits (or aborts due to excessive timeouts).
 func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 	if n.state == nil {
 		n.state = &ValidatorState{}
@@ -123,6 +125,8 @@ func (n *Node) StartConsensus(height int, startRound int, total int) bool {
 	return n.committed
 }
 
+// clearOldMessages drains stale network messages so the new height starts with
+// a clean inbox while preserving future-height messages.
 func (n *Node) clearOldMessages(height int) {
 Loop:
 	for {
@@ -138,6 +142,8 @@ Loop:
 	}
 }
 
+// runRound executes a single consensus round: schedule stage timeouts, process
+// inbound messages/events, and handle proposer duties when applicable.
 func (n *Node) runRound(height int, round int) {
 	var proposer int
 	if n.activeMetrics != nil {
