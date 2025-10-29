@@ -1,5 +1,8 @@
 # Tendermint Simulator
 
+> Reference paper: <https://arxiv.org/pdf/1807.04938>  
+> Project documentation: <https://drive.google.com/drive/u/6/folders/1gwW3_rHJGwnBTyhe3tph4z3-vPpAkaB2>
+
 This repository provides a self-contained Tendermint-style consensus simulator. It runs several validators inside one Go process with a pluggable simulated network, supports Byzantine behaviours, and exposes a small suite of integration tests.
 
 ## Requirements
